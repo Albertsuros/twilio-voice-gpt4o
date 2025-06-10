@@ -14,33 +14,49 @@ const openai = new OpenAI({
 // Middleware
 app.use(bodyParser.urlencoded({ extended: false }));
 
+// Historial básico (en producción deberías usar sesiones por llamada)
+let conversationHistory = [
+  {
+    role: "system",
+    content: `
+Ets la Verònica, secretària virtual d’A S Asesores, especialitzada en atenció telefònica professional. El teu objectiu és atendre amb amabilitat, gestionar cites de manera eficient i derivar les trucades al departament adequat.
+També ets una assistent professional, intel·ligent i especialista en intel·ligència artificial, automatitzacions, creació de personal virtual i serveis relacionats. Coneixes perfectament les solucions que ofereix A S Asesores.
+Quan el client pregunti pels preus, pots explicar que, en molts casos, els nostres serveis no superen els 500 €, però sempre es prepara un pressupost adaptat a cada necessitat.
+
+Parla de manera natural, clara i pausada. Fes només una pregunta a la vegada. Mantingues frases curtes i properes. Respon sempre en el mateix idioma que utilitzi el client. Si el client diu expressions com “no, gràcies” o “això és tot”, acomiada’t amb educació.`
+  }
+];
+
 // Ruta para recibir llamadas de Twilio
 app.post('/voice', async (req, res) => {
   const speechResult = req.body.SpeechResult || '';
   const response = new twiml.VoiceResponse();
 
   if (!speechResult) {
-    // Si es la primera vez o no hay input, reproducir audio de bienvenida
+    // Saludo inicial (audio mp3 de bienvenida)
     response.play('https://drive.google.com/uc?export=download&id=1yCTN5n9QJoE10IIQjOOeh2DbrfpZb4y_');
   } else {
-    let aiResponse = "Ho sento, no t'he entès. Pots repetir-ho, si us plau?";
-
     try {
+      // Añadir entrada del usuario al historial
+      conversationHistory.push({ role: "user", content: speechResult });
+
+      // Obtener respuesta de GPT-4o
       const completion = await openai.chat.completions.create({
         model: "gpt-4o",
-        messages: [
-          { role: "system", content: "Responde en el mismo idioma que el usuario, de manera educada y breve." },
-          { role: "user", content: speechResult }
-        ],
+        messages: conversationHistory,
       });
-      aiResponse = completion.choices[0].message.content;
+
+      const aiResponse = completion.choices[0].message.content;
+
+      // Añadir respuesta al historial
+      conversationHistory.push({ role: "assistant", content: aiResponse });
+
+      // Responder por voz (TTS de Twilio por ahora)
+      response.say({ language: 'ca-ES', voice: 'woman' }, aiResponse);
     } catch (error) {
       console.error('OpenAI Error:', error);
-      aiResponse = "Ho sento, hi ha hagut un error processant la resposta.";
+      response.say({ language: 'ca-ES', voice: 'woman' }, "Ho sento, hi ha hagut un error tècnic.");
     }
-
-    // Responder con voz
-    response.say({ language: 'ca-ES', voice: 'woman' }, aiResponse);
   }
 
   res.type('text/xml');
@@ -49,9 +65,9 @@ app.post('/voice', async (req, res) => {
 
 // Página principal
 app.get('/', (req, res) => {
-  res.send('Twilio Voice Assistant with GPT-4o is running.');
+  res.send('Verònica - Centraleta AI de AS Asesores està activa.');
 });
 
 app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
+  console.log(`Servidor actiu al port ${port}`);
 });
