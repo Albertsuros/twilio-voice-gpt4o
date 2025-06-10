@@ -3,10 +3,10 @@ services:
     name: twilio-voice-gpt4o
     env: node
     plan: free
-    buildCommand: "npm install openai && npm install"
+    buildCommand: "npm install"
     startCommand: "npm start"
     envVars:
       - key: OPENAI_API_KEY
         sync: false
       - key: PORT
-        value: 3000
+        value: 10000
