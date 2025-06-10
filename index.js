@@ -71,3 +71,4 @@ app.get('/', (req, res) => {
 app.listen(port, () => {
   console.log(`Servidor actiu al port ${port}`);
 });
+// Forzar redeploy en Railway
