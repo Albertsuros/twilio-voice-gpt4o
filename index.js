@@ -1,74 +1,119 @@
 const express = require('express');
 const bodyParser = require('body-parser');
+const fs = require('fs');
+const axios = require('axios');
 const { OpenAI } = require('openai');
 const { twiml } = require('twilio');
+const { v4: uuidv4 } = require('uuid');
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Configuración de OpenAI
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Middleware
-app.use(bodyParser.urlencoded({ extended: false }));
+const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
+const VOICE_ID = 'sk_9c5b9ad86201571648784ecbe20dcc05df555ac3d08de4fb';
 
-// Historial básico (en producción deberías usar sesiones por llamada)
+app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.json());
+
 let conversationHistory = [
   {
     role: "system",
     content: `
-Ets la Verònica, secretària virtual d’A S Asesores, especialitzada en atenció telefònica professional. El teu objectiu és atendre amb amabilitat, gestionar cites de manera eficient i derivar les trucades al departament adequat.
-També ets una assistent professional, intel·ligent i especialista en intel·ligència artificial, automatitzacions, creació de personal virtual i serveis relacionats. Coneixes perfectament les solucions que ofereix A S Asesores.
-Quan el client pregunti pels preus, pots explicar que, en molts casos, els nostres serveis no superen els 500 €, però sempre es prepara un pressupost adaptat a cada necessitat.
-
-Parla de manera natural, clara i pausada. Fes només una pregunta a la vegada. Mantingues frases curtes i properes. Respon sempre en el mateix idioma que utilitzi el client. Si el client diu expressions com “no, gràcies” o “això és tot”, acomiada’t amb educació.`
+Ets la Verònica, secretària virtual d’A S Asesores. Atens trucades amb calidesa, professionalitat i coneixement sobre serveis d'intel·ligència artificial per negocis. Parla de manera clara, natural, propera i en el mateix idioma del client. Fes una pregunta a la vegada. Quan el client digui "això és tot" o "gràcies", acomiada't amb amabilitat.
+    `
   }
 ];
 
-// Ruta para recibir llamadas de Twilio
 app.post('/voice', async (req, res) => {
-  const speechResult = req.body.SpeechResult || '';
-  const response = new twiml.VoiceResponse();
+  const twilioResponse = new twiml.VoiceResponse();
+  const speechResult = req.body.SpeechResult;
 
   if (!speechResult) {
-    // Saludo inicial (audio mp3 de bienvenida)
-    response.play('https://drive.google.com/uc?export=download&id=1yCTN5n9QJoE10IIQjOOeh2DbrfpZb4y_');
-  } else {
-    try {
-      // Añadir entrada del usuario al historial
-      conversationHistory.push({ role: "user", content: speechResult });
-
-      // Obtener respuesta de GPT-4o
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: conversationHistory,
-      });
-
-      const aiResponse = completion.choices[0].message.content;
-
-      // Añadir respuesta al historial
-      conversationHistory.push({ role: "assistant", content: aiResponse });
-
-      // Responder por voz (TTS de Twilio por ahora)
-      response.say({ language: 'ca-ES', voice: 'woman' }, aiResponse);
-    } catch (error) {
-      console.error('OpenAI Error:', error);
-      response.say({ language: 'ca-ES', voice: 'woman' }, "Ho sento, hi ha hagut un error tècnic.");
-    }
+    const gather = twilioResponse.gather({
+      input: 'speech',
+      action: '/voice',
+      method: 'POST',
+      language: 'ca-ES'
+    });
+    gather.say({ language: 'ca-ES', voice: 'woman' }, "Hola, sóc la Verònica, d’A S Asesores. En què puc ajudar-te?");
+    res.type('text/xml');
+    return res.send(twilioResponse.toString());
   }
 
-  res.type('text/xml');
-  res.send(response.toString());
+  try {
+    conversationHistory.push({ role: 'user', content: speechResult });
+
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: conversationHistory,
+    });
+
+    const aiResponse = completion.choices[0].message.content.trim();
+    conversationHistory.push({ role: 'assistant', content: aiResponse });
+
+    const audioUrl = await synthesizeWithElevenLabs(aiResponse);
+
+    const sayResponse = new twiml.VoiceResponse();
+    sayResponse.play(audioUrl);
+
+    const gather = sayResponse.gather({
+      input: 'speech',
+      action: '/voice',
+      method: 'POST',
+      language: 'ca-ES',
+      timeout: 5
+    });
+
+    res.type('text/xml');
+    return res.send(sayResponse.toString());
+  } catch (err) {
+    console.error('Error:', err);
+    twilioResponse.say({ language: 'ca-ES', voice: 'woman' }, "Ho sento, hi ha hagut un problema tècnic.");
+    res.type('text/xml');
+    return res.send(twilioResponse.toString());
+  }
 });
 
-// Página principal
+async function synthesizeWithElevenLabs(text) {
+  const url = `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`;
+  const outputFilename = `/tmp/${uuidv4()}.mp3`;
+
+  const response = await axios.post(
+    url,
+    {
+      text: text,
+      model_id: "eleven_multilingual_v2",
+      voice_settings: {
+        stability: 0.4,
+        similarity_boost: 0.75
+      }
+    },
+    {
+      headers: {
+        "xi-api-key": ELEVENLABS_API_KEY,
+        "Content-Type": "application/json"
+      },
+      responseType: 'stream'
+    }
+  );
+
+  const writer = fs.createWriteStream(outputFilename);
+  response.data.pipe(writer);
+
+  return new Promise((resolve, reject) => {
+    writer.on('finish', () => resolve(outputFilename));
+    writer.on('error', reject);
+  });
+}
+
 app.get('/', (req, res) => {
-  res.send('Verònica - Centraleta AI de AS Asesores està activa.');
+  res.send('Verònica - Assistència telefònica intel·ligent està activa.');
 });
 
 app.listen(port, () => {
   console.log(`Servidor actiu al port ${port}`);
 });
-// Forzar redeploy en Railway
