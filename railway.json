@@ -1,0 +1,10 @@
+{
+  "build": {
+    "command": "npm install"
+  },
+  "deploy": {
+    "command": "npm start",
+    "healthcheckPath": "/",
+    "restartPolicyType": "ON_FAILURE"
+  }
+}
