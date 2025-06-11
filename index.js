@@ -41,7 +41,9 @@ app.get('/', (req, res) => {
 
 // Ruta de voz
 app.post('/voice', async (req, res) => {
+  console.log("📞 Nueva llamada recibida");
   const twilioResponse = new twilio.twiml.VoiceResponse(); // ✅ Corrección
+  console.log("🗣️ Texto detectado:", speechResult);
   const speechResult = req.body.SpeechResult;
 
   if (!speechResult) {
@@ -72,8 +74,10 @@ app.post('/voice', async (req, res) => {
     });
 
     const aiResponse = completion.choices[0].message.content.trim();
+    console.log("🤖 Respuesta de OpenAI:", aiResponse);
     conversationHistory.push({ role: 'assistant', content: aiResponse });
-
+    console.log("🎤 Sintetizando audio con ElevenLabs...");
+    console.log("✅ Audio generado en:", audioUrl);
     const audioUrl = await synthesizeWithElevenLabs(aiResponse, req);
 
     const sayResponse = new twilio.twiml.VoiceResponse(); // ✅ Corrección
@@ -97,7 +101,8 @@ app.post('/voice', async (req, res) => {
 } catch (err) {
   console.error('Error en /voice:', err.message); // Más específico
   console.error('Stack trace:', err.stack); // Para debugging
-  
+  throw new Error(`Audio synthesis failed: ${error.message}`);
+    
   twilioResponse.say({ 
     language: 'ca-ES', 
     voice: 'woman' 
