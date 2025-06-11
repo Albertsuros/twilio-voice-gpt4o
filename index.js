@@ -109,15 +109,29 @@ app.post('/voice', async (req, res) => {
 
 // ✅ Función mejorada para generar el audio
 async function synthesizeWithElevenLabs(text, req) {
+  // Validaciones iniciales
+  if (!VOICE_ID || !ELEVENLABS_API_KEY) {
+    throw new Error('Missing ElevenLabs configuration');
+  }
+  if (!text || text.trim().length === 0) {
+    throw new Error('Text is required for synthesis');
+  }
+
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}/stream`;
   const filename = `${uuidv4()}.mp3`;
-  const filepath = path.join(__dirname, 'public', filename);
+  const publicDir = path.join(__dirname, 'public');
+  const filepath = path.join(publicDir, filename);
+
+  // Asegurar que el directorio existe
+  if (!fs.existsSync(publicDir)) {
+    fs.mkdirSync(publicDir, { recursive: true });
+  }
 
   try {
     const response = await axios.post(
       url,
       {
-        text: text,
+        text: text.trim(),
         model_id: "eleven_multilingual_v2",
         voice_settings: {
           stability: 0.4,
@@ -133,15 +147,21 @@ async function synthesizeWithElevenLabs(text, req) {
       }
     );
 
-    fs.writeFileSync(filepath, response.data);
+    // Escribir archivo con manejo de errores
+    try {
+      fs.writeFileSync(filepath, response.data);
+    } catch (fsError) {
+      console.error('Error writing audio file:', fsError);
+      throw new Error('Failed to save audio file');
+    }
     
-    // ✅ URL dinámica
-    const baseUrl = BASE_URL || `https://${req.get('host')}`;
+    // URL dinámica con fallback
+    const baseUrl = BASE_URL || (req ? `https://${req.get('host')}` : 'http://localhost:3000');
     return `${baseUrl}/${filename}`;
 
   } catch (error) {
-    console.error('Error synthesizing audio:', error);
-    throw new Error('Audio synthesis failed');
+    console.error('Error synthesizing audio:', error.response?.data || error.message);
+    throw new Error(`Audio synthesis failed: ${error.message}`);
   }
 }
 
