@@ -54,7 +54,7 @@ app.post('/voice', async (req, res) => {
       language: 'ca-ES',
       timeout: 10
     });
-    gather.say({ language: 'ca-ES', voice: 'woman' }, "Hola, sóc la Verònica, d'A S Asesores. En què puc ajudar-te?");
+    gather.say({ language: 'ca-ES', voice: 'woman' }, "Hola, sóc la Verònica, d' A S Asesores. En què et puc ajudar?");
     
     res.type('text/xml');
     return res.send(twilioResponse.toString());
