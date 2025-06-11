@@ -6,7 +6,7 @@
     "command": "npm start",
     "healthcheckPath": "/",
     "restartPolicyType": "ON_FAILURE",
-    "healthcheckTimeout": 30,  // Opcional: más tiempo para responder
-    "healthcheckInterval": 60  // Opcional: intervalo de verificación
+    "healthcheckTimeout": 30,
+    "healthcheckInterval": 60
   }
 }
