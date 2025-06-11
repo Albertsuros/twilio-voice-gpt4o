@@ -94,13 +94,18 @@ app.post('/voice', async (req, res) => {
     res.type('text/xml');
     return res.send(sayResponse.toString());
 
-  } catch (err) {
-    console.error('Error:', err);
-    twilioResponse.say({ language: 'ca-ES', voice: 'woman' }, "Ho sento, hi ha hagut un problema tècnic.");
-    res.type('text/xml');
-    return res.send(twilioResponse.toString());
-  }
-});
+} catch (err) {
+  console.error('Error en /voice:', err.message); // Más específico
+  console.error('Stack trace:', err.stack); // Para debugging
+  
+  twilioResponse.say({ 
+    language: 'ca-ES', 
+    voice: 'woman' 
+  }, "Ho sento, hi ha hagut un problema tècnic. Torneu a intentar-ho, si us plau.");
+  
+  res.type('text/xml');
+  return res.send(twilioResponse.toString());
+}
 
 // ✅ Función mejorada para generar el audio
 async function synthesizeWithElevenLabs(text, req) {
