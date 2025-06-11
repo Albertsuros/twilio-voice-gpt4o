@@ -56,12 +56,17 @@ app.post('/voice', async (req, res) => {
   }
 
   try {
-    conversationHistory.push({ role: 'user', content: speechResult });
+conversationHistory.push({ role: 'user', content: speechResult });
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: conversationHistory,
-    });
+// Mantener solo los últimos 6 mensajes + el system
+const historyLimit = 6;
+const recentMessages = conversationHistory.slice(-historyLimit);
+const messagesForAI = [conversationHistory[0], ...recentMessages];
+
+const completion = await openai.chat.completions.create({
+  model: 'gpt-4o',
+  messages: messagesForAI,
+});
 
     const aiResponse = completion.choices[0].message.content.trim();
     conversationHistory.push({ role: 'assistant', content: aiResponse });
