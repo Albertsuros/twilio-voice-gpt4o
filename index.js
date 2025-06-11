@@ -1,11 +1,8 @@
 require("dotenv").config();
 const express = require('express');
 const bodyParser = require('body-parser');
-const fs = require('fs');
-const axios = require('axios');
 const { OpenAI } = require('openai');
 const { twiml } = require('twilio');
-const { v4: uuidv4 } = require('uuid');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -13,12 +10,6 @@ const port = process.env.PORT || 3000;
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
-
-const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
-const VOICE_ID = 'sk_9c5b9ad86201571648784ecbe20dcc05df555ac3d08de4fb';
-
-app.use(bodyParser.urlencoded({ extended: false }));
-app.use(bodyParser.json());
 
 let conversationHistory = [
   {
@@ -28,6 +19,9 @@ Ets la Verònica, secretària virtual d’A S Asesores. Atens trucades amb calid
     `
   }
 ];
+
+app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.json());
 
 app.post('/voice', async (req, res) => {
   const twilioResponse = new twiml.VoiceResponse();
@@ -56,12 +50,10 @@ app.post('/voice', async (req, res) => {
     const aiResponse = completion.choices[0].message.content.trim();
     conversationHistory.push({ role: 'assistant', content: aiResponse });
 
-    const audioUrl = await synthesizeWithElevenLabs(aiResponse);
+    const response = new twiml.VoiceResponse();
+    response.say({ language: 'ca-ES', voice: 'woman' }, aiResponse);
 
-    const sayResponse = new twiml.VoiceResponse();
-    sayResponse.play(audioUrl);
-
-    const gather = sayResponse.gather({
+    const gather = response.gather({
       input: 'speech',
       action: '/voice',
       method: 'POST',
@@ -70,7 +62,7 @@ app.post('/voice', async (req, res) => {
     });
 
     res.type('text/xml');
-    return res.send(sayResponse.toString());
+    return res.send(response.toString());
   } catch (err) {
     console.error('Error:', err);
     twilioResponse.say({ language: 'ca-ES', voice: 'woman' }, "Ho sento, hi ha hagut un problema tècnic.");
@@ -78,38 +70,6 @@ app.post('/voice', async (req, res) => {
     return res.send(twilioResponse.toString());
   }
 });
-
-async function synthesizeWithElevenLabs(text) {
-  const url = `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`;
-  const outputFilename = `/tmp/${uuidv4()}.mp3`;
-
-  const response = await axios.post(
-    url,
-    {
-      text: text,
-      model_id: "eleven_multilingual_v2",
-      voice_settings: {
-        stability: 0.4,
-        similarity_boost: 0.75
-      }
-    },
-    {
-      headers: {
-        "xi-api-key": ELEVENLABS_API_KEY,
-        "Content-Type": "application/json"
-      },
-      responseType: 'stream'
-    }
-  );
-
-  const writer = fs.createWriteStream(outputFilename);
-  response.data.pipe(writer);
-
-  return new Promise((resolve, reject) => {
-    writer.on('finish', () => resolve(outputFilename));
-    writer.on('error', reject);
-  });
-}
 
 app.get('/', (req, res) => {
   res.send('Verònica - Assistència telefònica intel·ligent està activa.');
