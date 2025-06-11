@@ -68,7 +68,7 @@ app.post('/voice', async (req, res) => {
     const messagesForAI = [conversationHistory[0], ...recentMessages];
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: 'gpt-3.5-turbo',
       messages: messagesForAI,
     });
 
