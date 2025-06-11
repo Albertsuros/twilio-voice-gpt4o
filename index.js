@@ -4,7 +4,7 @@ const bodyParser = require('body-parser');
 const fs = require('fs');
 const axios = require('axios');
 const { OpenAI } = require('openai');
-const twilio = require('twilio'); // ✅ Corrección
+const twilio = require('twilio');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 
@@ -42,9 +42,9 @@ app.get('/', (req, res) => {
 // Ruta de voz
 app.post('/voice', async (req, res) => {
   console.log("📞 Nueva llamada recibida");
-  const twilioResponse = new twilio.twiml.VoiceResponse(); // ✅ Corrección
-  console.log("🗣️ Texto detectado:", speechResult);
+  const twilioResponse = new twilio.twiml.VoiceResponse();
   const speechResult = req.body.SpeechResult;
+  console.log("🗣️ Texto detectado:", speechResult);
 
   if (!speechResult) {
     const gather = twilioResponse.gather({
@@ -63,7 +63,6 @@ app.post('/voice', async (req, res) => {
   try {
     conversationHistory.push({ role: 'user', content: speechResult });
 
-    // Mantener solo los últimos 6 mensajes + el system
     const historyLimit = 6;
     const recentMessages = conversationHistory.slice(-historyLimit);
     const messagesForAI = [conversationHistory[0], ...recentMessages];
@@ -76,45 +75,42 @@ app.post('/voice', async (req, res) => {
     const aiResponse = completion.choices[0].message.content.trim();
     console.log("🤖 Respuesta de OpenAI:", aiResponse);
     conversationHistory.push({ role: 'assistant', content: aiResponse });
-    console.log("🎤 Sintetizando audio con ElevenLabs...");
-    console.log("✅ Audio generado en:", audioUrl);
-    const audioUrl = await synthesizeWithElevenLabs(aiResponse, req);
 
-    const sayResponse = new twilio.twiml.VoiceResponse(); // ✅ Corrección
-    sayResponse.play(audioUrl);
-    
-    // ✅ Mejora: Gather después del audio
-    const gather = sayResponse.gather({
+    console.log("🎤 Sintetizando audio con ElevenLabs...");
+    const audioUrl = await synthesizeWithElevenLabs(aiResponse, req);
+    console.log("✅ Audio generado en:", audioUrl);
+
+    twilioResponse.play(audioUrl);
+
+    const gather = twilioResponse.gather({
       input: 'speech',
       action: '/voice',
       method: 'POST',
       language: 'ca-ES',
       timeout: 10
     });
-    
-    // Mensaje por defecto si no hay respuesta
+
     gather.say({ language: 'ca-ES', voice: 'woman' }, "");
-    
+
     res.type('text/xml');
-    return res.send(sayResponse.toString());
+    return res.send(twilioResponse.toString());
 
-} catch (err) {
-  console.error('Error en /voice:', err.message); // Más específico
-  console.error('Stack trace:', err.stack); // Para debugging
-  throw new Error(`Audio synthesis failed: ${error.message}`);
-    
-  twilioResponse.say({ 
-    language: 'ca-ES', 
-    voice: 'woman' 
-  }, "Ho sento, hi ha hagut un problema tècnic. Torneu a intentar-ho, si us plau.");
-  
-  res.type('text/xml');
-  return res.send(twilioResponse.toString());
-}
+  } catch (err) {
+    console.error('❌ Error en /voice:', err.message);
+    console.error('📛 Stack trace:', err.stack);
 
-// ✅ Función mejorada para generar el audio
+    twilioResponse.say({
+      language: 'ca-ES',
+      voice: 'woman'
+    }, "Ho sento, hi ha hagut un problema tècnic. Torneu a intentar-ho, si us plau.");
+
+    res.type('text/xml');
+    return res.send(twilioResponse.toString());
+  }
+});
+
+// Función para sintetizar con ElevenLabs
 async function synthesizeWithElevenLabs(text, req) {
-  // Validaciones iniciales
   if (!VOICE_ID || !ELEVENLABS_API_KEY) {
     throw new Error('Missing ElevenLabs configuration');
   }
@@ -127,7 +123,6 @@ async function synthesizeWithElevenLabs(text, req) {
   const publicDir = path.join(__dirname, 'public');
   const filepath = path.join(publicDir, filename);
 
-  // Asegurar que el directorio existe
   if (!fs.existsSync(publicDir)) {
     fs.mkdirSync(publicDir, { recursive: true });
   }
@@ -152,15 +147,8 @@ async function synthesizeWithElevenLabs(text, req) {
       }
     );
 
-    // Escribir archivo con manejo de errores
-    try {
-      fs.writeFileSync(filepath, response.data);
-    } catch (fsError) {
-      console.error('Error writing audio file:', fsError);
-      throw new Error('Failed to save audio file');
-    }
-    
-    // URL dinámica con fallback
+    fs.writeFileSync(filepath, response.data);
+
     const baseUrl = BASE_URL || (req ? `https://${req.get('host')}` : 'http://localhost:3000');
     return `${baseUrl}/${filename}`;
 
@@ -170,19 +158,18 @@ async function synthesizeWithElevenLabs(text, req) {
   }
 }
 
-// ✅ Función para limpiar archivos antiguos (opcional)
+// Limpiar archivos viejos
 function cleanupOldFiles() {
   const publicDir = path.join(__dirname, 'public');
   fs.readdir(publicDir, (err, files) => {
     if (err) return;
-    
+
     files.forEach(file => {
       if (file.endsWith('.mp3')) {
         const filePath = path.join(publicDir, file);
         const stats = fs.statSync(filePath);
         const age = Date.now() - stats.mtime.getTime();
-        
-        // Eliminar archivos más antiguos de 1 hora
+
         if (age > 3600000) {
           fs.unlinkSync(filePath);
         }
@@ -191,7 +178,6 @@ function cleanupOldFiles() {
   });
 }
 
-// Limpiar archivos cada 30 minutos
 setInterval(cleanupOldFiles, 1800000);
 
 // Iniciar servidor
