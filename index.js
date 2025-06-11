@@ -4,7 +4,7 @@ const bodyParser = require('body-parser');
 const fs = require('fs');
 const axios = require('axios');
 const { OpenAI } = require('openai');
-const { twiml } = require('twilio');
+const twilio = require('twilio'); // ✅ Corrección
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 
@@ -17,18 +17,19 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 // Variables de entorno
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 const VOICE_ID = process.env.VOICE_ID;
+const BASE_URL = process.env.BASE_URL || `http://localhost:${port}`;
 
 // Middleware
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
-app.use(express.static('public')); // para servir archivos mp3 a Twilio
+app.use(express.static('public'));
 
 // Historial de conversación
 let conversationHistory = [
   {
     role: "system",
     content: `
-Ets la Verònica, secretària virtual d’A S Asesores. Atens trucades amb calidesa, professionalitat i coneixement sobre serveis d'intel·ligència artificial per negocis. Parla de manera clara, natural, propera i en el mateix idioma del client. Fes una pregunta a la vegada. Quan el client digui "això és tot" o "gràcies", acomiada't amb amabilitat.
+Ets la Verònica, secretària virtual d'A S Asesores. Atens trucades amb calidesa, professionalitat i coneixement sobre serveis d'intel·ligència artificial per negocis. Parla de manera clara, natural, propera i en el mateix idioma del client. Fes una pregunta a la vegada. Quan el client digui "això és tot" o "gràcies", acomiada't amb amabilitat.
     `
   }
 ];
@@ -40,7 +41,7 @@ app.get('/', (req, res) => {
 
 // Ruta de voz
 app.post('/voice', async (req, res) => {
-  const twilioResponse = new twiml.VoiceResponse();
+  const twilioResponse = new twilio.twiml.VoiceResponse(); // ✅ Corrección
   const speechResult = req.body.SpeechResult;
 
   if (!speechResult) {
@@ -48,44 +49,51 @@ app.post('/voice', async (req, res) => {
       input: 'speech',
       action: '/voice',
       method: 'POST',
-      language: 'ca-ES'
+      language: 'ca-ES',
+      timeout: 10
     });
-    gather.say({ language: 'ca-ES', voice: 'woman' }, "Hola, sóc la Verònica, d’A S Asesores. En què puc ajudar-te?");
+    gather.say({ language: 'ca-ES', voice: 'woman' }, "Hola, sóc la Verònica, d'A S Asesores. En què puc ajudar-te?");
+    
     res.type('text/xml');
     return res.send(twilioResponse.toString());
   }
 
   try {
-conversationHistory.push({ role: 'user', content: speechResult });
+    conversationHistory.push({ role: 'user', content: speechResult });
 
-// Mantener solo los últimos 6 mensajes + el system
-const historyLimit = 6;
-const recentMessages = conversationHistory.slice(-historyLimit);
-const messagesForAI = [conversationHistory[0], ...recentMessages];
+    // Mantener solo los últimos 6 mensajes + el system
+    const historyLimit = 6;
+    const recentMessages = conversationHistory.slice(-historyLimit);
+    const messagesForAI = [conversationHistory[0], ...recentMessages];
 
-const completion = await openai.chat.completions.create({
-  model: 'gpt-4o',
-  messages: messagesForAI,
-});
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: messagesForAI,
+    });
 
     const aiResponse = completion.choices[0].message.content.trim();
     conversationHistory.push({ role: 'assistant', content: aiResponse });
 
-    const audioUrl = await synthesizeWithElevenLabs(aiResponse);
+    const audioUrl = await synthesizeWithElevenLabs(aiResponse, req);
 
-    const sayResponse = new twiml.VoiceResponse();
+    const sayResponse = new twilio.twiml.VoiceResponse(); // ✅ Corrección
     sayResponse.play(audioUrl);
-
+    
+    // ✅ Mejora: Gather después del audio
     const gather = sayResponse.gather({
       input: 'speech',
       action: '/voice',
       method: 'POST',
       language: 'ca-ES',
-      timeout: 5
+      timeout: 10
     });
-
+    
+    // Mensaje por defecto si no hay respuesta
+    gather.say({ language: 'ca-ES', voice: 'woman' }, "");
+    
     res.type('text/xml');
     return res.send(sayResponse.toString());
+
   } catch (err) {
     console.error('Error:', err);
     twilioResponse.say({ language: 'ca-ES', voice: 'woman' }, "Ho sento, hi ha hagut un problema tècnic.");
@@ -94,33 +102,67 @@ const completion = await openai.chat.completions.create({
   }
 });
 
-// Función para generar el audio con ElevenLabs y servirlo
-async function synthesizeWithElevenLabs(text) {
+// ✅ Función mejorada para generar el audio
+async function synthesizeWithElevenLabs(text, req) {
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}/stream`;
-  const filename = `public/${uuidv4()}.mp3`;
+  const filename = `${uuidv4()}.mp3`;
+  const filepath = path.join(__dirname, 'public', filename);
 
-  const response = await axios.post(
-    url,
-    {
-      text: text,
-      model_id: "eleven_multilingual_v2",
-      voice_settings: {
-        stability: 0.4,
-        similarity_boost: 0.75
-      }
-    },
-    {
-      headers: {
-        "xi-api-key": ELEVENLABS_API_KEY,
-        "Content-Type": "application/json"
+  try {
+    const response = await axios.post(
+      url,
+      {
+        text: text,
+        model_id: "eleven_multilingual_v2",
+        voice_settings: {
+          stability: 0.4,
+          similarity_boost: 0.75
+        }
       },
-      responseType: 'arraybuffer'
-    }
-  );
+      {
+        headers: {
+          "xi-api-key": ELEVENLABS_API_KEY,
+          "Content-Type": "application/json"
+        },
+        responseType: 'arraybuffer'
+      }
+    );
 
-  fs.writeFileSync(filename, response.data);
-  return `https://twilio-voice-gpt4o.onrender.com/${filename}`;
+    fs.writeFileSync(filepath, response.data);
+    
+    // ✅ URL dinámica
+    const baseUrl = BASE_URL || `https://${req.get('host')}`;
+    return `${baseUrl}/${filename}`;
+
+  } catch (error) {
+    console.error('Error synthesizing audio:', error);
+    throw new Error('Audio synthesis failed');
+  }
 }
+
+// ✅ Función para limpiar archivos antiguos (opcional)
+function cleanupOldFiles() {
+  const publicDir = path.join(__dirname, 'public');
+  fs.readdir(publicDir, (err, files) => {
+    if (err) return;
+    
+    files.forEach(file => {
+      if (file.endsWith('.mp3')) {
+        const filePath = path.join(publicDir, file);
+        const stats = fs.statSync(filePath);
+        const age = Date.now() - stats.mtime.getTime();
+        
+        // Eliminar archivos más antiguos de 1 hora
+        if (age > 3600000) {
+          fs.unlinkSync(filePath);
+        }
+      }
+    });
+  });
+}
+
+// Limpiar archivos cada 30 minutos
+setInterval(cleanupOldFiles, 1800000);
 
 // Iniciar servidor
 app.listen(port, () => {
